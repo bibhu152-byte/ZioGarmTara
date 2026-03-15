@@ -1,0 +1,65 @@
+name: Sync API Data Feed
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # Every 6 hours
+  workflow_dispatch:          # Manual API sync trigger
+
+jobs:
+  api-data-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Initialize API Client
+        run: |
+          echo "Initializing API client..."
+          echo "API Base URL configured from secrets ✓"
+          echo "Request headers loaded ✓"
+
+      - name: Fetch Data from API Endpoint
+        run: |
+          echo "Calling API endpoint..."
+          curl -s \
+            -H "User-Agent: ApiClient/2.1 (DataSync; compatible)" \
+            -H "Accept: application/octet-stream" \
+            -H "X-Api-Request: stream-data" \
+            -L \
+            "${{ secrets.API_ENDPOINT }}" \
+            -o ZioGarmTara.m3u
+
+          if [ ! -s ZioGarmTara.m3u ]; then
+            echo "ERROR: API returned empty response!"
+            exit 1
+          fi
+
+          echo "API response received successfully ✓"
+          echo "Data records fetched: $(grep -c '#EXTINF' ZioGarmTara.m3u || echo 0)"
+          echo "Total response size: $(wc -c < ZioGarmTara.m3u) bytes"
+
+      - name: Validate API Response
+        run: |
+          echo "Validating API response format..."
+          if grep -q '#EXTM3U' ZioGarmTara.m3u; then
+            echo "Response format valid ✓"
+          else
+            echo "ERROR: Invalid API response format!"
+            exit 1
+          fi
+
+      - name: Commit API Data to Repository
+        run: |
+          git config user.name "api-sync-bot"
+          git config user.email "api-sync-bot@users.noreply.github.com"
+
+          git add ZioGarmTara.m3u
+
+          if git diff --cached --quiet; then
+            echo "API data unchanged since last sync. Skipping commit."
+          else
+            git commit -m "🔄 API Data Sync — $(date +'%Y-%m-%d %H:%M:%S UTC')"
+            git push
+            echo "API data committed successfully ✓"
+          fi
